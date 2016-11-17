@@ -33,9 +33,12 @@ import swPrecache from 'sw-precache';
 import gulpLoadPlugins from 'gulp-load-plugins';
 import {output as pagespeed} from 'psi';
 import pkg from './package.json';
+import config from './config.js';
 
 const $ = gulpLoadPlugins();
 const reload = browserSync.reload;
+
+const app = config.app;
 
 // Lint JavaScript
 gulp.task('lint', () =>
@@ -82,39 +85,84 @@ gulp.task('styles', () => {
     'bb >= 10'
   ];
 
-  // For best performance, don't add Sass partials to `gulp.src`
-  return gulp.src([
-    'app/styles/**/*.scss',
-    'app/styles/**/*.css'
-  ])
-    .pipe($.newer('.tmp/styles'))
-    .pipe($.sourcemaps.init())
-    .pipe($.sass({
-      precision: 10
-    }).on('error', $.sass.logError))
-    .pipe($.autoprefixer(AUTOPREFIXER_BROWSERS))
-    .pipe(gulp.dest('.tmp/styles'))
-    // Concatenate and minify styles
-    .pipe($.if('*.css', $.cssnano()))
-    .pipe($.size({title: 'styles'}))
-    .pipe($.sourcemaps.write('./'))
-    .pipe(gulp.dest('dist/styles'));
+  var aTasks = [];
+
+  for (var sPattern in app.styles){
+    if (!app.styles.hasOwnProperty(sPattern)) {
+      continue;
+    }
+
+    var oStyleOptions = app.styles[sPattern];
+
+    console.log('Process styles for: ' + sPattern);
+
+    var oSource = gulp.src(sPattern);
+
+    oSource = oSource
+      .pipe($.newer('.tmp/styles'))
+      .pipe($.sourcemaps.init());
+
+    for (var sAction in oStyleOptions) {
+      if (!oStyleOptions.hasOwnProperty(sAction)) {
+        continue;
+      }
+
+      var oActionOptions = oStyleOptions[sAction];
+
+      if (sAction !== 'options') {
+        oSource = oSource.pipe($[sAction](oActionOptions));
+      }
+    }
+
+    oSource = oSource
+      .pipe($.autoprefixer(AUTOPREFIXER_BROWSERS))
+      .pipe(gulp.dest('.tmp/styles'))
+      .pipe($.size({title: 'styles'}))
+      .pipe($.sourcemaps.write('./'))
+      .pipe(gulp.dest('dist/styles'));
+
+    aTasks.push(oSource);
+  }
+
+  return aTasks;
+
 });
 
 // Concatenate and minify JavaScript. Optionally transpiles ES2015 code to ES5.
 // to enable ES2015 support remove the line `"only": "gulpfile.babel.js",` in the
 // `.babelrc` file.
-gulp.task('scripts', () =>
-    gulp.src([
-      // Note: Since we are not using useref in the scripts build pipeline,
-      //       you need to explicitly list your scripts here in the right order
-      //       to be correctly concatenated
-      './app/scripts/main.js'
-      // Other scripts
-    ])
+gulp.task('scripts', () => {
+
+  var aTasks = [];
+
+  for (var sPattern in app.scripts) {
+    if (!app.scripts.hasOwnProperty(sPattern)) {
+      continue;
+    }
+
+    var oScriptOptions = app.scripts[sPattern];
+
+    console.log('Process scripts for: '+ sPattern);
+
+    var oSource = gulp.src(sPattern);
+
+    oSource = oSource
       .pipe($.newer('.tmp/scripts'))
-      .pipe($.sourcemaps.init())
-      .pipe($.babel())
+      .pipe($.sourcemaps.init());
+
+    for (var sAction in oScriptOptions) {
+      if (!oScriptOptions.hasOwnProperty(sAction)) {
+        continue;
+      }
+
+      var oActionOptions = oScriptOptions[sAction];
+
+      if (sAction !== 'options') {
+        oSource = oSource.pipe($[sAction](oActionOptions));
+      }
+    }
+
+    oSource = oSource
       .pipe($.sourcemaps.write())
       .pipe(gulp.dest('.tmp/scripts'))
       .pipe($.concat('main.min.js'))
@@ -122,8 +170,14 @@ gulp.task('scripts', () =>
       // Output files
       .pipe($.size({title: 'scripts'}))
       .pipe($.sourcemaps.write('.'))
-      .pipe(gulp.dest('dist/scripts'))
-);
+      .pipe(gulp.dest('dist/scripts'));
+
+    aTasks.push(oSource);
+  }
+
+  return aTasks;
+
+});
 
 // Scan your HTML for assets & optimize them
 gulp.task('html', () => {
@@ -154,20 +208,13 @@ gulp.task('html', () => {
 gulp.task('clean', () => del(['.tmp', 'dist/*', '!dist/.git'], {dot: true}));
 
 // Watch files for changes & reload
+gulp.task('temp', ['scripts','styles'], () => {
+  console.log('finished...');
+});
+
+// Watch files for changes & reload
 gulp.task('serve', ['scripts', 'styles'], () => {
-  browserSync({
-    notify: false,
-    // Customize the Browsersync console logging prefix
-    logPrefix: 'WSK',
-    // Allow scroll syncing across breakpoints
-    scrollElementMapping: ['main', '.mdl-layout'],
-    // Run as an https by uncommenting 'https: true'
-    // Note: this uses an unsigned certificate which on first access
-    //       will present a certificate warning in the browser.
-    // https: true,
-    server: ['.tmp', 'app'],
-    port: 3000
-  });
+  browserSync(config.browserSync);
 
   gulp.watch(['app/**/*.html'], reload);
   gulp.watch(['app/styles/**/*.{scss,css}'], ['styles', reload]);
